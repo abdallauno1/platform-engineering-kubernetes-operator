@@ -1,0 +1,11 @@
+apiVersion: platform.mady.dev/v1
+kind: AIPlatform
+metadata:
+  name: demo-ai-platform
+  namespace: default
+spec:
+  image: ghcr.io/example/ai-platform:day1
+  replicas: 2
+  env:
+    MODEL_PROVIDER: ollama
+    LOG_LEVEL: info
