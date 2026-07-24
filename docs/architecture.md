@@ -1,19 +1,27 @@
-# Day 1 Architecture
+# Day 2 Architecture — Reconciliation with State Management
 
 ```mermaid
 flowchart LR
-    User[Platform Engineer] -->|kubectl apply| CR[AIPlatform Custom Resource]
-    CR --> API[Kubernetes API Server]
-    API --> Controller[AI Platform Operator Controller]
-    Controller --> Reconcile[Reconciliation Loop]
-    Reconcile --> Desired[Desired Deployment Spec]
-    Desired --> Workload[Managed AI Platform Workload]
+    Engineer[Platform Engineer] -->|applies AIPlatform| API[Kubernetes API Server]
+    API --> Controller[AIPlatform Controller]
+    Controller --> Validate[Validate Custom Resource]
+    Validate --> Desired[Build Desired Workload]
+    Desired --> Client[Workload Client Abstraction]
+    Client -->|not found| Create[Create Workload]
+    Client -->|drift detected| Update[Update Workload]
+    Client -->|already equal| NoOp[No-op / Idempotent]
+    Create --> Status[Status: Ready]
+    Update --> Status
+    NoOp --> Status
+    Validate -->|invalid| Failed[Status: Failed]
 ```
 
-## Components
+## Architecture decisions
 
-- **AIPlatform CRD** defines the platform intent: image, replicas and environment variables.
-- **Controller/Reconciler** validates the custom resource and computes desired workload state.
-- **Manifests** provide the first installable Kubernetes API surface.
+- `WorkloadClient` isolates reconciliation logic from a concrete Kubernetes client.
+- `MemoryWorkloadClient` makes create/update/idempotency behavior testable without a cluster.
+- Desired and current state are compared before mutation.
+- Reconciliation returns explicit actions: `Created`, `Updated`, `Unchanged`, or `Failed`.
+- Status records phase, message, observed generation, and ready replicas.
 
-Day 1 intentionally keeps cluster-side mutation abstracted in Go so the reconciliation logic is easy to test without a Kubernetes cluster.
+Day 3 will replace the demonstration runtime with installable operator deployment manifests and production-oriented container/Kubernetes configuration.

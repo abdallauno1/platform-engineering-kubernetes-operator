@@ -2,10 +2,9 @@ FROM golang:1.23-alpine AS builder
 WORKDIR /src
 COPY go.mod ./
 COPY . .
-RUN go build -o /out/ai-platform-operator ./cmd/operator
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ai-platform-operator ./cmd/operator
 
-FROM alpine:3.20
-RUN adduser -D -u 10001 operator
-USER operator
-COPY --from=builder /out/ai-platform-operator /usr/local/bin/ai-platform-operator
-ENTRYPOINT ["/usr/local/bin/ai-platform-operator"]
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /out/ai-platform-operator /ai-platform-operator
+USER nonroot:nonroot
+ENTRYPOINT ["/ai-platform-operator"]

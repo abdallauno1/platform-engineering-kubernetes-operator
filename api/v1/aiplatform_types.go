@@ -9,6 +9,10 @@ const (
 	KindAIPlatform      = "AIPlatform"
 	DefaultImage        = "nginx:1.27-alpine"
 	DefaultReplicas int = 1
+
+	PhasePending = "Pending"
+	PhaseReady   = "Ready"
+	PhaseFailed  = "Failed"
 )
 
 type AIPlatformSpec struct {
@@ -18,8 +22,10 @@ type AIPlatformSpec struct {
 }
 
 type AIPlatformStatus struct {
-	Phase   string `json:"phase"`
-	Message string `json:"message,omitempty"`
+	Phase              string `json:"phase"`
+	Message            string `json:"message,omitempty"`
+	ObservedGeneration int64  `json:"observedGeneration,omitempty"`
+	ReadyReplicas      int    `json:"readyReplicas,omitempty"`
 }
 
 type AIPlatform struct {
@@ -31,9 +37,10 @@ type AIPlatform struct {
 }
 
 type ObjectMeta struct {
-	Name      string            `json:"name"`
-	Namespace string            `json:"namespace,omitempty"`
-	Labels    map[string]string `json:"labels,omitempty"`
+	Name       string            `json:"name"`
+	Namespace  string            `json:"namespace,omitempty"`
+	Generation int64             `json:"generation,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
 }
 
 func (p AIPlatform) Validate() error {
@@ -54,14 +61,22 @@ func NewDefault(name, namespace string) AIPlatform {
 		APIVersion: "platform.mady.dev/v1",
 		Kind:       KindAIPlatform,
 		Metadata: ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:       name,
+			Namespace:  namespace,
+			Generation: 1,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":       name,
 				"app.kubernetes.io/managed-by": "ai-platform-operator",
 			},
 		},
-		Spec:   AIPlatformSpec{Image: DefaultImage, Replicas: DefaultReplicas},
-		Status: AIPlatformStatus{Phase: "Pending", Message: "Waiting for first reconciliation"},
+		Spec: AIPlatformSpec{
+			Image:    DefaultImage,
+			Replicas: DefaultReplicas,
+			Env:      map[string]string{},
+		},
+		Status: AIPlatformStatus{
+			Phase:   PhasePending,
+			Message: "Waiting for first reconciliation",
+		},
 	}
 }

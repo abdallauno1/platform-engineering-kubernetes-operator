@@ -9,8 +9,7 @@ spec:
     plural: aiplatforms
     singular: aiplatform
     kind: AIPlatform
-    shortNames:
-      - aip
+    shortNames: [aip]
   versions:
     - name: v1
       served: true
@@ -25,6 +24,7 @@ spec:
               properties:
                 image:
                   type: string
+                  minLength: 1
                 replicas:
                   type: integer
                   minimum: 1
@@ -37,8 +37,14 @@ spec:
               properties:
                 phase:
                   type: string
+                  enum: [Pending, Ready, Failed]
                 message:
                   type: string
+                observedGeneration:
+                  type: integer
+                  format: int64
+                readyReplicas:
+                  type: integer
       subresources:
         status: {}
       additionalPrinterColumns:
@@ -48,6 +54,9 @@ spec:
         - name: Replicas
           type: integer
           jsonPath: .spec.replicas
+        - name: Ready
+          type: integer
+          jsonPath: .status.readyReplicas
         - name: Phase
           type: string
           jsonPath: .status.phase

@@ -2,50 +2,111 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
-	platformv1 "github.com/abdallamady/kubernetes-operator-go/api/v1"
+	platformv1 "github.com/abdallauno1/platform-engineering-kubernetes-operator/api/v1"
+)
+
+type Action string
+
+const (
+	ActionCreated   Action = "Created"
+	ActionUpdated   Action = "Updated"
+	ActionUnchanged Action = "Unchanged"
+	ActionFailed    Action = "Failed"
 )
 
 type Result struct {
+	Action  Action
 	Requeue bool
 	Message string
+	Status  platformv1.AIPlatformStatus
 }
 
-type DesiredDeployment struct {
-	Name      string
-	Namespace string
-	Image     string
-	Replicas  int
-	Labels    map[string]string
+type AIPlatformReconciler struct {
+	client WorkloadClient
 }
 
-type AIPlatformReconciler struct{}
+func NewAIPlatformReconciler(client WorkloadClient) *AIPlatformReconciler {
+	return &AIPlatformReconciler{client: client}
+}
 
-func NewAIPlatformReconciler() *AIPlatformReconciler { return &AIPlatformReconciler{} }
-
-func (r *AIPlatformReconciler) Reconcile(ctx context.Context, platform platformv1.AIPlatform) (Result, DesiredDeployment, error) {
-	select {
-	case <-ctx.Done():
-		return Result{}, DesiredDeployment{}, ctx.Err()
-	default:
+func (r *AIPlatformReconciler) Reconcile(ctx context.Context, platform platformv1.AIPlatform) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return failedResult(platform, err), err
 	}
-
 	if err := platform.Validate(); err != nil {
-		return Result{Requeue: false, Message: "invalid custom resource"}, DesiredDeployment{}, err
+		return failedResult(platform, err), err
 	}
 
-	desired := DesiredDeployment{
+	desired := desiredWorkload(platform)
+	current, err := r.client.Get(ctx, desired.Namespace, desired.Name)
+
+	switch {
+	case errors.Is(err, ErrNotFound):
+		if err := r.client.Create(ctx, desired); err != nil {
+			return failedResult(platform, err), err
+		}
+		return readyResult(platform, ActionCreated, "managed workload created"), nil
+	case err != nil:
+		return failedResult(platform, err), err
+	case !current.Equal(desired):
+		if err := r.client.Update(ctx, desired); err != nil {
+			return failedResult(platform, err), err
+		}
+		return readyResult(platform, ActionUpdated, "managed workload updated after drift detection"), nil
+	default:
+		return readyResult(platform, ActionUnchanged, "managed workload already matches desired state"), nil
+	}
+}
+
+func desiredWorkload(platform platformv1.AIPlatform) Workload {
+	return Workload{
 		Name:      fmt.Sprintf("%s-workload", platform.Metadata.Name),
 		Namespace: platform.Metadata.Namespace,
 		Image:     platform.Spec.Image,
 		Replicas:  platform.Spec.Replicas,
+		Env:       cloneMap(platform.Spec.Env),
 		Labels: map[string]string{
 			"app.kubernetes.io/name":       platform.Metadata.Name,
 			"app.kubernetes.io/managed-by": "ai-platform-operator",
 			"platform.mady.dev/kind":       platformv1.KindAIPlatform,
 		},
 	}
+}
 
-	return Result{Requeue: false, Message: "desired deployment calculated"}, desired, nil
+func readyResult(platform platformv1.AIPlatform, action Action, message string) Result {
+	return Result{
+		Action:  action,
+		Requeue: false,
+		Message: message,
+		Status: platformv1.AIPlatformStatus{
+			Phase:              platformv1.PhaseReady,
+			Message:            message,
+			ObservedGeneration: platform.Metadata.Generation,
+			ReadyReplicas:      platform.Spec.Replicas,
+		},
+	}
+}
+
+func failedResult(platform platformv1.AIPlatform, err error) Result {
+	return Result{
+		Action:  ActionFailed,
+		Requeue: false,
+		Message: err.Error(),
+		Status: platformv1.AIPlatformStatus{
+			Phase:              platformv1.PhaseFailed,
+			Message:            err.Error(),
+			ObservedGeneration: platform.Metadata.Generation,
+		},
+	}
+}
+
+func cloneMap(input map[string]string) map[string]string {
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }

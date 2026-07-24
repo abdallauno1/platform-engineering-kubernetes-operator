@@ -1,110 +1,126 @@
-# Kubernetes Operator in Go — AI Platform Operator
+# Platform Engineering Kubernetes Operator
 
-A portfolio-grade Kubernetes Operator project built as part of an AI Platform Engineer roadmap.
+[![Go CI](https://github.com/abdallauno1/platform-engineering-kubernetes-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/abdallauno1/platform-engineering-kubernetes-operator/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/badge/Go-1.23-00ADD8?logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Day 1 creates the foundation: a custom platform API, CRD manifest, testable reconciliation logic, Docker support, GitHub Actions and documentation.
+A portfolio-grade Kubernetes Operator project written in Go. It demonstrates how a controller translates an `AIPlatform` custom resource into managed workload state through a deterministic and idempotent reconciliation loop.
 
-## Roadmap Context
+## Day 2 Highlights
 
-This is Project 1 in Phase 2: **Kubernetes Operator (Go)**. The project focuses on Go, Kubebuilder-style operator concepts, CRDs, controllers and the reconciliation loop.
-
-## Features — Day 1
-
-- `AIPlatform` custom resource model in Go.
-- Kubernetes CRD manifest for `aiplatforms.platform.mady.dev`.
-- Reconciler that validates intent and calculates desired deployment state.
-- Unit tests for API defaults, validation and reconciliation.
-- Dockerfile for the operator binary.
-- GitHub Actions CI for format, vet, tests and build.
-- Architecture and sequence diagrams.
-- LinkedIn post draft for public progress tracking.
+- Custom `AIPlatform` API and CRD.
+- Client abstraction for infrastructure operations.
+- Create, update, and no-op reconciliation paths.
+- Drift detection and idempotency.
+- Status phases with observed generation and ready replicas.
+- Unit tests for the main controller behaviors.
+- GitHub Actions for formatting, vetting, race-enabled tests, coverage, and build.
+- Docker image support and Kubernetes RBAC/CRD samples.
+- Architecture, sequence, daily notes, and LinkedIn drafts.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    User[Platform Engineer] -->|kubectl apply| CR[AIPlatform Custom Resource]
-    CR --> API[Kubernetes API Server]
-    API --> Controller[AI Platform Operator Controller]
-    Controller --> Reconcile[Reconciliation Loop]
-    Reconcile --> Desired[Desired Deployment Spec]
-    Desired --> Workload[Managed AI Platform Workload]
+    CR[AIPlatform Custom Resource] --> Controller[AIPlatform Controller]
+    Controller --> Desired[Desired Workload]
+    Desired --> Client[Workload Client]
+    Client -->|Missing| Create[Create]
+    Client -->|Drift| Update[Update]
+    Client -->|Equal| NoOp[No-op]
+    Create --> Status[Ready Status]
+    Update --> Status
+    NoOp --> Status
 ```
 
-## Reconciliation Flow
+## Reconciliation Behavior
 
-```mermaid
-sequenceDiagram
-    actor Engineer
-    participant API as Kubernetes API Server
-    participant Operator as AI Platform Operator
-    participant Reconciler
-    participant Deployment as Desired Deployment
-
-    Engineer->>API: apply AIPlatform custom resource
-    API-->>Operator: watch event
-    Operator->>Reconciler: Reconcile(AIPlatform)
-    Reconciler->>Reconciler: validate spec
-    Reconciler->>Deployment: calculate desired workload
-    Deployment-->>Operator: desired state
-```
+| Current state | Desired state | Action |
+|---|---|---|
+| Workload missing | Valid resource | `Created` |
+| Workload differs | New image, replicas, env, or labels | `Updated` |
+| Workload matches | No drift | `Unchanged` |
+| Invalid resource | Validation failure | `Failed` |
 
 ## Repository Structure
 
 ```text
 .
-├── api/v1                     # Custom resource types
-├── cmd/operator               # Operator entrypoint
-├── config/crd                 # CRD manifests
-├── config/rbac                # RBAC scaffold
-├── config/samples             # Example custom resource
-├── docs                       # Architecture, sequence and daily notes
-├── internal/controller        # Reconciliation logic
-├── .github/workflows          # CI pipeline
+├── .github/workflows/ci.yml   # Continuous integration
+├── api/v1                     # Custom resource types and status
+├── cmd/operator               # Local operator demonstration
+├── config/crd                 # CRD manifest
+├── config/rbac                # Controller RBAC
+├── config/samples             # Sample AIPlatform resource
+├── docs                       # Architecture and daily documentation
+├── internal/controller        # Reconciler, client abstraction, workload model
+├── scripts/verify.sh          # Local CI verification
 ├── Dockerfile
 ├── Makefile
 └── README.md
 ```
 
+## Requirements
+
+- Go 1.23+
+- Docker, optionally
+- Kubernetes CLI and cluster, optionally for manifests
+
 ## Run Locally
 
 ```bash
-make test
-make build
+make ci
 make run
 ```
 
 Expected output:
 
 ```text
-result=desired deployment calculated deployment=demo-ai-platform-workload image=nginx:1.27-alpine replicas=1
+iteration=1 action=Created phase=Ready message="managed workload created" readyReplicas=2
+iteration=2 action=Unchanged phase=Ready message="managed workload already matches desired state" readyReplicas=2
+iteration=3 action=Updated phase=Ready message="managed workload updated after drift detection" readyReplicas=3
 ```
 
-## Kubernetes Manifests
+## Tests and Coverage
+
+```bash
+make test
+make coverage
+```
+
+## Docker
+
+```bash
+make docker-build
+docker run --rm ai-platform-operator:day2
+```
+
+## Kubernetes API Manifests
 
 ```bash
 kubectl apply -f config/crd/platform.mady.dev_aiplatforms.yaml
 kubectl apply -f config/samples/platform_v1_aiplatform.yaml
+kubectl get aiplatforms
 ```
 
-## CI
+The Day 2 runtime uses an in-memory client to keep reconciliation behavior independently testable. Day 3 will add the installable operator deployment, service account, role binding, health probes, and production-focused Kubernetes packaging.
 
-The GitHub Actions workflow runs:
+## Project Roadmap
 
-```bash
-gofmt check
-go vet ./...
-go test ./...
-go build ./cmd/operator
-```
+- [x] **Day 1 — Foundation:** API model, CRD, basic reconciliation, tests, Docker, docs.
+- [x] **Day 2 — Architecture evolution:** client abstraction, drift detection, create/update/no-op, status.
+- [ ] **Day 3 — Production readiness:** operator deployment, RBAC binding, health checks, container CI.
+- [ ] **Day 4 — Advanced features and polish:** metrics, final documentation, release and portfolio polish.
 
-## Day-by-Day Plan
+## Documentation
 
-- **Day 1:** Foundation: API type, CRD, basic reconciler, tests, docs and CI.
-- **Day 2:** Architecture evolution: client abstraction, create/update logic and status handling.
-- **Day 3:** Production readiness: Docker/Kubernetes manifests, deployment, service account and deeper CI.
-- **Day 4:** Advanced features and polish: metrics, final docs, screenshots checklist and portfolio-ready README.
+- [Day 1 notes](docs/day1.md)
+- [Day 2 notes](docs/day2.md)
+- [Architecture](docs/architecture.md)
+- [Sequence diagram](docs/sequence.md)
+- [Day 1 LinkedIn post](docs/linkedin-day1.md)
+- [Day 2 LinkedIn post](docs/linkedin-day2.md)
 
 ## License
 
-MIT
+MIT © 2026 Abdalla Mady

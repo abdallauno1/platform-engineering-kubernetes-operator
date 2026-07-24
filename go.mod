@@ -1,3 +1,3 @@
-module github.com/abdallamady/kubernetes-operator-go
+module github.com/abdallauno1/platform-engineering-kubernetes-operator
 
 go 1.23.2
