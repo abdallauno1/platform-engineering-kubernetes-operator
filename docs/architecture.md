@@ -1,27 +1,33 @@
-# Day 2 Architecture — Reconciliation with State Management
+# Day 3 Architecture — Production Runtime and Kubernetes Packaging
 
 ```mermaid
-flowchart LR
-    Engineer[Platform Engineer] -->|applies AIPlatform| API[Kubernetes API Server]
-    API --> Controller[AIPlatform Controller]
-    Controller --> Validate[Validate Custom Resource]
-    Validate --> Desired[Build Desired Workload]
-    Desired --> Client[Workload Client Abstraction]
-    Client -->|not found| Create[Create Workload]
-    Client -->|drift detected| Update[Update Workload]
-    Client -->|already equal| NoOp[No-op / Idempotent]
-    Create --> Status[Status: Ready]
-    Update --> Status
-    NoOp --> Status
-    Validate -->|invalid| Failed[Status: Failed]
+flowchart TB
+    Engineer[Platform Engineer] -->|kubectl apply -k config| API[Kubernetes API Server]
+    API --> CRD[AIPlatform CRD]
+    API --> Deployment[Controller Manager Deployment]
+
+    subgraph Pod[Operator Pod]
+      Runtime[Long-running Operator Runtime]
+      Probe[Health Server :8081]
+      Reconciler[AIPlatform Reconciler]
+      Client[WorkloadClient Abstraction]
+      Runtime --> Reconciler
+      Runtime --> Probe
+      Reconciler --> Client
+    end
+
+    Deployment --> Pod
+    Kubelet[Kubelet] -->|GET /healthz| Probe
+    Kubelet -->|GET /readyz| Probe
+    RBAC[ServiceAccount + ClusterRole + Binding] --> Deployment
+    NetPol[NetworkPolicy] --> Pod
 ```
 
-## Architecture decisions
+## Production-readiness decisions
 
-- `WorkloadClient` isolates reconciliation logic from a concrete Kubernetes client.
-- `MemoryWorkloadClient` makes create/update/idempotency behavior testable without a cluster.
-- Desired and current state are compared before mutation.
-- Reconciliation returns explicit actions: `Created`, `Updated`, `Unchanged`, or `Failed`.
-- Status records phase, message, observed generation, and ready replicas.
-
-Day 3 will replace the demonstration runtime with installable operator deployment manifests and production-oriented container/Kubernetes configuration.
+- Distroless, non-root image minimizes runtime surface area.
+- Read-only root filesystem and dropped Linux capabilities reduce container privileges.
+- Liveness and readiness endpoints are independent so Kubernetes can distinguish process health from controller readiness.
+- Resource requests and limits make scheduling behavior explicit.
+- Kustomize provides a single installation entry point without duplicating manifests.
+- CI gates the container build on successful formatting, vetting, race-enabled tests and Go build.

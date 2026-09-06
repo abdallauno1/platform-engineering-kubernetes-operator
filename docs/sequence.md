@@ -1,28 +1,34 @@
-# Day 2 Reconciliation Sequence
+# Day 3 Runtime Sequence
 
 ```mermaid
 sequenceDiagram
-    actor Engineer
-    participant API as Kubernetes API Server
-    participant Controller as AIPlatform Controller
-    participant Client as Workload Client
-    participant Workload as Managed Workload
+    participant K as Kubernetes
+    participant P as Operator Process
+    participant H as Health Server
+    participant R as Reconciler
+    participant C as Workload Client
 
-    Engineer->>API: Apply or modify AIPlatform
-    API-->>Controller: Reconcile event
-    Controller->>Controller: Validate and build desired state
-    Controller->>Client: Get workload
+    K->>P: Start container
+    P->>H: Start :8081
+    K->>H: GET /healthz
+    H-->>K: 200 OK
+    P->>R: Initial reconcile
+    R->>C: Get desired workload state
+    C-->>R: Current state / NotFound
+    R-->>P: Created / Updated / Unchanged
+    P->>H: SetReady(true)
+    K->>H: GET /readyz
+    H-->>K: 200 Ready
 
-    alt Workload does not exist
-        Client-->>Controller: NotFound
-        Controller->>Client: Create desired workload
-        Controller-->>API: Status Ready / Created
-    else Workload differs from desired state
-        Client-->>Controller: Current workload
-        Controller->>Client: Update workload
-        Controller-->>API: Status Ready / Updated
-    else Workload already matches
-        Client-->>Controller: Current workload
-        Controller-->>API: Status Ready / Unchanged
+    loop Every reconcile interval
+        P->>R: Reconcile
+        R->>C: Compare desired/current state
+        C-->>R: State
+        R-->>P: Result
     end
+
+    K->>P: SIGTERM
+    P->>H: SetReady(false)
+    P->>H: Graceful shutdown
+    P-->>K: Exit
 ```

@@ -11,7 +11,7 @@ func TestReconcileCreatesMissingWorkload(t *testing.T) {
 	client := NewMemoryWorkloadClient()
 	reconciler := NewAIPlatformReconciler(client)
 	resource := platformv1.NewDefault("demo-ai", "platform")
-	resource.Spec.Image = "ghcr.io/example/ai-platform:day2"
+	resource.Spec.Image = "ghcr.io/example/ai-platform:day3"
 	resource.Spec.Replicas = 3
 
 	result, err := reconciler.Reconcile(context.Background(), resource)

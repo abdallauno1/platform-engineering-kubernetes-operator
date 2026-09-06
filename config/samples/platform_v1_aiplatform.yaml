@@ -4,7 +4,7 @@ metadata:
   name: demo-ai-platform
   namespace: default
 spec:
-  image: ghcr.io/example/ai-platform:day2
+  image: ghcr.io/example/ai-platform:day3
   replicas: 2
   env:
     MODEL_PROVIDER: ollama
