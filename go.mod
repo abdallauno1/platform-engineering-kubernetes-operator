@@ -1,3 +1,3 @@
 module github.com/abdallauno1/platform-engineering-kubernetes-operator
 
-go 1.23.2
+go 1.26.10
