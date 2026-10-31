@@ -1,167 +1,163 @@
 # Platform Engineering Kubernetes Operator
 
 [![Go CI](https://github.com/abdallauno1/platform-engineering-kubernetes-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/abdallauno1/platform-engineering-kubernetes-operator/actions/workflows/ci.yml)
-[![Go Version](https://img.shields.io/badge/Go-1.23-00ADD8?logo=go)](https://go.dev/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A portfolio-grade Kubernetes Operator project written in Go. It demonstrates deterministic reconciliation, drift detection, status management, production runtime concerns, Kubernetes packaging and CI-driven container validation.
+A four-day portfolio project exploring the core engineering properties of a Kubernetes operator in Go: custom resources, reconciliation, convergence, drift detection, status, lifecycle primitives, health/readiness, metrics, containerization and CI.
 
-## Day 3 Highlights
+## Project status
 
-- Long-running operator process with periodic reconciliation.
-- Kubernetes-compatible `/healthz` and `/readyz` probes.
-- Graceful SIGTERM/SIGINT shutdown.
-- Namespace, ServiceAccount, ClusterRole, ClusterRoleBinding and Deployment manifests.
-- Hardened non-root, read-only, distroless container runtime.
-- CPU/memory requests and limits.
-- Kustomize installation entry point and NetworkPolicy baseline.
-- GitHub Actions: formatting, vet, race-enabled tests, coverage, build and Docker image build.
-- Updated architecture, sequence diagram, Day 3 documentation and LinkedIn post.
+**v1.0.0 / Day 4 complete**
+
+| Day | Focus | Result |
+| --- | --- | --- |
+| 1 | Foundation | CRD model, validation, basic reconciliation |
+| 2 | Architecture evolution | Idempotent create/update/no-op, drift detection, status |
+| 3 | Production readiness | Long-running runtime, probes, graceful shutdown, Docker/Kubernetes/Kustomize |
+| 4 | Advanced features & polish | Metrics, finalizers, events, security CI, release documentation |
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    CR[AIPlatform Custom Resource] --> Controller[AIPlatform Controller]
-    Controller --> Desired[Desired Workload]
-    Desired --> Client[Workload Client]
-    Client -->|Missing| Create[Create]
-    Client -->|Drift| Update[Update]
-    Client -->|Equal| NoOp[No-op]
-    Controller --> Health[Health / Readiness Server]
-    Kubelet[Kubelet] -->|/healthz + /readyz| Health
+flowchart TD
+  CR[AIPlatform Custom Resource] --> R[AIPlatform Reconciler]
+  R --> D[Desired Workload]
+  D --> C{Current state?}
+  C -->|Missing| CREATE[Create]
+  C -->|Drift| UPDATE[Update]
+  C -->|Matches| NOOP[No-op]
+  CREATE --> S[Status / Result]
+  UPDATE --> S
+  NOOP --> S
+  S --> METRICS[/Prometheus-compatible metrics/]
+  S --> EVENTS[Operator events]
+  RT[Operator Runtime] --> R
+  RT --> HEALTH[/healthz/]
+  RT --> READY[/readyz/]
 ```
 
-## Reconciliation Behavior
+The reconciliation policy depends on the small `WorkloadClient` interface. The included memory implementation keeps unit tests deterministic. A cluster-backed implementation can replace it without changing the reconciliation policy.
 
-| Current state | Desired state | Action |
-|---|---|---|
-| Workload missing | Valid resource | `Created` |
-| Workload differs | New image, replicas, env, or labels | `Updated` |
-| Workload matches | No drift | `Unchanged` |
-| Invalid resource | Validation failure | `Failed` |
+## Reconciliation contract
 
-## Repository Structure
+For each `AIPlatform` resource the controller derives a desired workload and converges toward it:
+
+- workload absent -> `Created`
+- workload differs -> `Updated`
+- workload already matches -> `Unchanged`
+- validation/client failure -> `Failed`
+
+Repeated reconciliation against matching state is a no-op, which makes the policy idempotent.
+
+## Lifecycle and observability
+
+Day 4 adds:
+
+- `AIPlatformFinalizer` helpers with idempotent add/remove behavior
+- event recorder abstraction
+- Prometheus text-format reconciliation counters
+- reconciliation error counter
+- `/healthz` and `/readyz`
+- graceful SIGINT/SIGTERM shutdown
+
+## Repository layout
 
 ```text
 .
-├── .github/workflows/ci.yml   # Go CI + container build
-├── api/v1                     # Custom resource types and status
-├── cmd/operator               # Demo and long-running operator runtime
-├── config/crd                 # CRD manifest
-├── config/manager             # Namespace + controller Deployment
-├── config/network-policy      # NetworkPolicy baseline
-├── config/rbac                # ServiceAccount, role and binding
-├── config/samples             # Sample AIPlatform resource
-├── docs                       # Architecture, sequence and daily docs
-├── internal/controller        # Reconciler, client abstraction, workload model
-├── internal/health            # Liveness/readiness server and tests
-├── scripts/verify.sh          # Local CI verification
+├── .github/              # CI and Dependabot
+├── api/v1/               # AIPlatform API model
+├── cmd/operator/         # Runtime and demo entrypoint
+├── config/               # CRD, RBAC, Deployment, Kustomize, NetworkPolicy, sample
+├── docs/                 # Architecture, sequence, deployment and day notes
+├── internal/controller/  # Reconciliation, clients, finalizers, metrics
+├── internal/events/      # Event recorder abstraction
+├── internal/health/      # Liveness/readiness HTTP server
+├── scripts/              # Verification helper
 ├── Dockerfile
 ├── Makefile
-└── README.md
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+└── SECURITY.md
 ```
 
-## Requirements
+## Quick start
 
-- Go 1.23+
-- Docker for image build/run
-- `kubectl` + Kubernetes cluster for deployment
-- Kustomize support through modern `kubectl apply -k`
-
-## Verify Locally
+Requirements: Go 1.23+, Docker for container commands, and `kubectl` for manifest rendering/deployment.
 
 ```bash
-make ci
-./scripts/verify.sh
+go test ./...
+go run ./cmd/operator --mode demo
 ```
 
-## Run the Reconciliation Demo
+Run the long-lived process:
 
 ```bash
-make run
+go run ./cmd/operator --mode operator --health-addr :8081 --reconcile-interval 5s
 ```
 
-Expected behavior:
-
-```text
-iteration=1 action=Created ...
-iteration=2 action=Unchanged ...
-iteration=3 action=Updated ...
-```
-
-## Run the Long-Lived Operator Runtime
-
-```bash
-make operator
-```
-
-In another terminal:
-
-```bash
-curl -i http://localhost:8081/healthz
-curl -i http://localhost:8081/readyz
-```
-
-Both endpoints should return HTTP 200 after the initial reconciliation succeeds.
-
-## Docker
-
-```bash
-make docker-build
-make docker-run
-```
-
-Then verify probes:
+Then:
 
 ```bash
 curl http://localhost:8081/healthz
 curl http://localhost:8081/readyz
 ```
 
-## Install on Kubernetes
+## Verification
 
-Build the image first:
+```bash
+make ci
+```
+
+This checks formatting, vet, race-enabled tests and build.
+
+Container build:
 
 ```bash
 make docker-build
 ```
 
-For a local cluster such as kind/minikube, load the local image using that cluster's normal image-loading command. Then install all manifests:
+Render Kubernetes manifests:
+
+```bash
+kubectl kustomize config
+```
+
+## CI/CD
+
+GitHub Actions validates every push/PR to `main` with:
+
+1. formatting
+2. `go vet`
+3. race-enabled unit tests + coverage artifact
+4. Go build
+5. `govulncheck`
+6. Docker Buildx container build
+
+Dependabot monitors Go modules and GitHub Actions weekly.
+
+## Kubernetes deployment
+
+The repository includes a namespace, CRD, ServiceAccount/RBAC, hardened Deployment, NetworkPolicy, sample custom resource and Kustomize entrypoint under `config/`.
 
 ```bash
 kubectl apply -k config
-kubectl get pods -n ai-platform-system
-kubectl get aiplatforms
 ```
 
-Apply the sample resource:
+## Design scope
 
-```bash
-kubectl apply -f config/samples/platform_v1_aiplatform.yaml
-kubectl get aiplatforms
-```
+This project intentionally separates **reconciliation policy** from **cluster transport**. The shipped `WorkloadClient` is an in-memory adapter used by the runnable portfolio demo and tests; it does not claim to persist managed workloads through the Kubernetes API. The natural production extension is a `client-go` or `controller-runtime` adapter plus watch-based reconciliation.
 
-> **Architecture scope:** Day 3 packages the controller as a Kubernetes workload and hardens its runtime. The reconciliation engine still talks through the `WorkloadClient` abstraction backed by the in-memory implementation; a concrete Kubernetes API client is not claimed here.
-
-## Project Roadmap
-
-- [x] **Day 1 — Foundation:** API model, CRD, basic reconciliation, tests, Docker, docs.
-- [x] **Day 2 — Architecture evolution:** client abstraction, drift detection, create/update/no-op, status.
-- [x] **Day 3 — Production readiness:** deployment, RBAC binding, health checks, graceful shutdown, container CI.
-- [ ] **Day 4 — Advanced features and polish:** metrics, advanced integration, release automation and final portfolio polish.
+That boundary is deliberate: the repository demonstrates convergence, idempotency and operator lifecycle patterns without hiding infrastructure behavior behind an inaccurate claim.
 
 ## Documentation
 
-- [Day 1 notes](docs/day1.md)
-- [Day 2 notes](docs/day2.md)
-- [Day 3 notes](docs/day3.md)
 - [Architecture](docs/architecture.md)
-- [Sequence diagram](docs/sequence.md)
-- [Day 1 LinkedIn post](docs/linkedin-day1.md)
-- [Day 2 LinkedIn post](docs/linkedin-day2.md)
-- [Day 3 LinkedIn post](docs/linkedin-day3.md)
+- [Sequence](docs/sequence.md)
+- [Deployment](docs/deployment.md)
+- [Day 4 notes](docs/day4.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
 
 ## License
 
-MIT © 2026 Abdalla Mady
+MIT. See [LICENSE](LICENSE).

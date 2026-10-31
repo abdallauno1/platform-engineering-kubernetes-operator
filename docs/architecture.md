@@ -1,33 +1,17 @@
-# Day 3 Architecture — Production Runtime and Kubernetes Packaging
+# Architecture
 
 ```mermaid
-flowchart TB
-    Engineer[Platform Engineer] -->|kubectl apply -k config| API[Kubernetes API Server]
-    API --> CRD[AIPlatform CRD]
-    API --> Deployment[Controller Manager Deployment]
-
-    subgraph Pod[Operator Pod]
-      Runtime[Long-running Operator Runtime]
-      Probe[Health Server :8081]
-      Reconciler[AIPlatform Reconciler]
-      Client[WorkloadClient Abstraction]
-      Runtime --> Reconciler
-      Runtime --> Probe
-      Reconciler --> Client
-    end
-
-    Deployment --> Pod
-    Kubelet[Kubelet] -->|GET /healthz| Probe
-    Kubelet -->|GET /readyz| Probe
-    RBAC[ServiceAccount + ClusterRole + Binding] --> Deployment
-    NetPol[NetworkPolicy] --> Pod
+flowchart TD
+  CR[AIPlatform CR] --> REC[Reconciler]
+  REC --> DES[Desired Workload]
+  DES --> CLIENT[WorkloadClient]
+  CLIENT --> MEM[Memory adapter - shipped]
+  CLIENT -. extension .-> K8S[Kubernetes API adapter]
+  REC --> STATUS[Status result]
+  STATUS --> METRICS[Metrics]
+  STATUS --> EVENTS[Events]
+  RUNTIME[Operator runtime] --> REC
+  RUNTIME --> PROBES[Health / readiness]
 ```
 
-## Production-readiness decisions
-
-- Distroless, non-root image minimizes runtime surface area.
-- Read-only root filesystem and dropped Linux capabilities reduce container privileges.
-- Liveness and readiness endpoints are independent so Kubernetes can distinguish process health from controller readiness.
-- Resource requests and limits make scheduling behavior explicit.
-- Kustomize provides a single installation entry point without duplicating manifests.
-- CI gates the container build on successful formatting, vetting, race-enabled tests and Go build.
+The controller owns policy: validation, desired-state derivation, drift detection and result/status calculation. Infrastructure access is behind `WorkloadClient`, making policy independently testable.

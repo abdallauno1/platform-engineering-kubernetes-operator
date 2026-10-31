@@ -1,34 +1,25 @@
-# Day 3 Runtime Sequence
+# Reconciliation sequence
 
 ```mermaid
 sequenceDiagram
-    participant K as Kubernetes
-    participant P as Operator Process
-    participant H as Health Server
-    participant R as Reconciler
-    participant C as Workload Client
-
-    K->>P: Start container
-    P->>H: Start :8081
-    K->>H: GET /healthz
-    H-->>K: 200 OK
-    P->>R: Initial reconcile
-    R->>C: Get desired workload state
-    C-->>R: Current state / NotFound
-    R-->>P: Created / Updated / Unchanged
-    P->>H: SetReady(true)
-    K->>H: GET /readyz
-    H-->>K: 200 Ready
-
-    loop Every reconcile interval
-        P->>R: Reconcile
-        R->>C: Compare desired/current state
-        C-->>R: State
-        R-->>P: Result
-    end
-
-    K->>P: SIGTERM
-    P->>H: SetReady(false)
-    P->>H: Graceful shutdown
-    P-->>K: Exit
+  participant Runtime
+  participant Reconciler
+  participant Client as WorkloadClient
+  participant Metrics
+  Runtime->>Reconciler: Reconcile(AIPlatform)
+  Reconciler->>Reconciler: Validate + derive desired state
+  Reconciler->>Client: Get(namespace, name)
+  alt missing
+    Client-->>Reconciler: ErrNotFound
+    Reconciler->>Client: Create(desired)
+    Reconciler-->>Runtime: Created / Ready
+  else drift detected
+    Client-->>Reconciler: current workload
+    Reconciler->>Client: Update(desired)
+    Reconciler-->>Runtime: Updated / Ready
+  else already converged
+    Client-->>Reconciler: matching workload
+    Reconciler-->>Runtime: Unchanged / Ready
+  end
+  Runtime->>Metrics: Observe(action, error)
 ```
